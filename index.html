@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rock Paper Scissors</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background-color: #111; /* Darker base for better hexagon contrast */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Poppins', 'Segoe UI', sans-serif;
+      color: white;
+      overflow: hidden;
+    }
+
+    /* FIX: Positioning the Hexagon Canvas as a background */
+    #hexCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+    }
+
+    .container {
+      width: 580px;
+      height: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      /* Subtle transparency + blur for glassmorphism effect */
+      background: rgba(1, 62, 63, 0.8);
+      backdrop-filter: blur(10px);
+      border: 2px solid #027e7e;
+      border-radius: 10px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+      padding: 20px;
+      z-index: 1;
+    }
+
+    .header {
+      font-size: 40px;
+      font-weight: bold;
+      color: #00ffe0;
+      text-shadow: 0 0 10px #00fff7;
+      margin-bottom: 20px;
+    }
+
+    .iconbox {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 30px;
+      margin-bottom: 20px;
+    }
+
+    .icon {
+      width: 80px;
+      height: 80px;
+      font-size: 40px;
+      border-radius: 50%;
+      border: 4px solid #027e7e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(to bottom, #013e3f, #027e7e);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .icon:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 15px #02c2c2;
+    }
+
+    .game-info {
+      width: 90%;
+      background-color: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 12px;
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    .score-item {
+      font-size: 18px;
+      margin: 5px 0;
+      color: #aadada;
+    }
+
+    .score-item span {
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .score-summary {
+      margin-top: 8px;
+      font-size: 20px;
+      font-weight: bold;
+      color: #00e6e6;
+    }
+
+    .result {
+      margin-top: 15px;
+      font-size: 25px;
+      font-weight: bolder;
+      color: #00ffe0; /* Brightened for visibility */
+    }
+
+    .replay-btn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 20px;
+      background-color: #00e6e6;
+      color: black;
+      cursor: pointer;
+      transition: 0.3s ease;
+    }
+
+    .replay-btn:hover {
+      background-color: #03b3b4;
+      box-shadow: 0 0 10px #02c2c2;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="hexCanvas"></canvas>
+
+  <div class="container">
+    <div class="header">Rock Paper Scissors</div>
+
+    <div class="iconbox">
+      <div class="icon" id="rock">✊</div>
+      <div class="icon" id="paper">✋</div>
+      <div class="icon" id="scissors">✌️</div>
+    </div>
+
+    <div class="game-info">
+      <div class="score-item">🧍 You Chose: <span id="user-choice">❔</span></div>
+      <div class="score-item">💻 Computer Chose: <span id="computer-choice">❔</span></div>
+      <div class="score-summary">
+        Score - You: <span id="user-score">0</span> | Computer: <span id="computer-score">0</span>
+      </div>
+    </div>
+
+    <div class="result" id="result">Start Playing!</div>
+
+    <button class="replay-btn" id="reset-btn">🔁 Reset</button>
+  </div>
+
+  <script>
+    /* --- SECTION 1: HEXAGON BACKGROUND LOGIC --- */
+    const canvas = document.getElementById("hexCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+    window.addEventListener("mousemove", (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    function drawHexagon(x, y, radius, baseColor, overlayColor) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        let angle = Math.PI / 3 * i;
+        let px = x + radius * Math.cos(angle);
+        let py = y + radius * Math.sin(angle);
+        ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = baseColor;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (overlayColor) {
+        ctx.strokeStyle = overlayColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    function animateHexagons() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const radius = 40;
+      const hexHeight = Math.sqrt(3) * radius;
+      const hexWidth = 2 * radius;
+      const vertDist = hexHeight;
+      const horizDist = (3 / 4) * hexWidth;
+
+      for (let row = 0; row < canvas.height / vertDist + 2; row++) {
+        for (let col = 0; col < canvas.width / horizDist + 2; col++) {
+          let x = col * horizDist;
+          let y = row * vertDist;
+          if (col % 2) y += vertDist / 2;
+          let dist = Math.hypot(mouse.x - x, mouse.y - y);
+          let glow = Math.max(0, 255 - dist / 1.5);
+          let overlayColor = `rgba(0, 255, 224, ${glow / 255})`;
+          drawHexagon(x, y, radius, "#222", overlayColor);
+        }
+      }
+      requestAnimationFrame(animateHexagons);
+    }
+    animateHexagons();
+
+    /* --- SECTION 2: PYODIDE / PYTHON INITIALIZATION --- */
+    async function main() {
+      let pyodide = await loadPyodide();
+      // This runs your original Python logic
+      await pyodide.runPythonAsync(`
+import random
+from js import document
+from pyodide.ffi import create_proxy
+
+choices = {"rock": "✊", "paper": "✋", "scissors": "✌️"}
+user_score = 0
+computer_score = 0
+
+def choose(event):
+    global user_score, computer_score
+    user_move = event.target.id
+    # Ensure we only handle clicks on actual move buttons
+    if user_move not in choices: return
+    
+    computer_move = random.choice(list(choices.keys()))
+
+    document.getElementById("user-choice").innerText = choices[user_move]
+    document.getElementById("computer-choice").innerText = choices[computer_move]
+
+    if user_move == computer_move:
+        result = "It's a draw!"
+    elif (user_move == "rock" and computer_move == "scissors") or \\
+         (user_move == "paper" and computer_move == "rock") or \\
+         (user_move == "scissors" and computer_move == "paper"):
+        result = "You Win! 🎉"
+        user_score += 1
+    else:
+        result = "Computer Wins! 😔"
+        computer_score += 1
+
+    document.getElementById("result").innerText = result
+    document.getElementById("user-score").innerText = str(user_score)
+    document.getElementById("computer-score").innerText = str(computer_score)
+
+def reset_game(event=None):
+    global user_score, computer_score
+    user_score = 0
+    computer_score = 0
+    document.getElementById("user-choice").innerText = "❔"
+    document.getElementById("computer-choice").innerText = "❔"
+    document.getElementById("result").innerText = "Start Playing!"
+    document.getElementById("user-score").innerText = "0"
+    document.getElementById("computer-score").innerText = "0"
+
+# Attach Python event handlers
+for move in ["rock", "paper", "scissors"]:
+    button = document.getElementById(move)
+    button.addEventListener("click", create_proxy(choose))
+
+reset_button = document.getElementById("reset-btn")
+reset_button.addEventListener("click", create_proxy(reset_game))
+      `);
+    }
+    main();
+  </script>
+</body>
+
+</html>
